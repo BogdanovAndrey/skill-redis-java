@@ -5,8 +5,6 @@ import org.redisson.api.RedissonClient;
 import org.redisson.client.RedisConnectionException;
 import org.redisson.config.Config;
 
-import java.util.Date;
-
 import static java.lang.System.out;
 
 public class RedisStorage {
@@ -17,22 +15,9 @@ public class RedisStorage {
     // Объект для работы с ключами
     private RKeys rKeys;
 
+    private final static String KEY = "USERS";
     // Объект для работы с Sorted Set'ом
-    private RScoredSortedSet<String> onlineUsers;
-
-    private final static String KEY = "ONLINE_USERS";
-
-    private double getTs() {
-        return new Date().getTime() / 1000;
-    }
-
-    // Пример вывода всех ключей
-    public void listKeys() {
-        Iterable<String> keys = rKeys.getKeys();
-        for(String key: keys) {
-            out.println("KEY: " + key + ", type:" + rKeys.getType(key));
-        }
-    }
+    private RScoredSortedSet<Integer> users;
 
     void init() {
         Config config = new Config();
@@ -44,7 +29,7 @@ public class RedisStorage {
             out.println(Exc.getMessage());
         }
         rKeys = redisson.getKeys();
-        onlineUsers = redisson.getScoredSortedSet(KEY);
+        users = redisson.getScoredSortedSet(KEY);
         rKeys.delete(KEY);
     }
 
@@ -52,24 +37,40 @@ public class RedisStorage {
         redisson.shutdown();
     }
 
-    // Фиксирует посещение пользователем страницы
-    void logPageVisit(int user_id)
-    {
-        //ZADD ONLINE_USERS
-        onlineUsers.add(getTs(), String.valueOf(user_id));
+    // Добавляем пользователя в список
+    void addUser(int userID, int userPoz) {
+        //ZADD USERS
+        users.add(userPoz, userID);
     }
 
-    // Удаляет
-    void deleteOldEntries(int secondsAgo)
-    {
-        //ZREVRANGEBYSCORE ONLINE_USERS 0 <time_5_seconds_ago>
-        onlineUsers.removeRangeByScore(0, true, getTs() - secondsAgo, true);
+    // Получаем пользователя с наименьшим "счетом"
+    public int getFirstUser() {
+        return users.first();
+    }
 
+    public int getLastUserScore() {
+        return users.takeLast();
+    }
+
+    //Меняем счет пользователя
+    public int changeScore(int userID, int score) {
+        int oldScore = getUser(userID);
+        users.add(score, userID);
+        return oldScore;
+    }
+
+
+    public void printAll() {
+        out.println("Users:");
+        users.stream().forEach(integer -> out.print(integer + " "));
+
+        out.println("\nScores:");
+        users.stream().forEach(integer -> out.print(users.getScore(integer) + " "));
+        out.println();
 
     }
-    int calculateUsersNumber()
-    {
-        //ZCOUNT ONLINE_USERS
-        return onlineUsers.count(Double.NEGATIVE_INFINITY, true, Double.POSITIVE_INFINITY, true);
+
+    public int getUser(Integer ID) {
+        return users.getScore(ID).intValue();
     }
 }
